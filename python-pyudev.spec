@@ -2,13 +2,16 @@
 
 Name:             python-pyudev
 Version:          0.15
-Release:          7%{?dist}.1
+Release:          9%{?dist}
 Summary:          A libudev binding
 Group:            Development/Languages
 License:          LGPLv2+
 URL:              http://pypi.python.org/pypi/pyudev
 Source0:          http://pypi.python.org/packages/source/p/pyudev/pyudev-0.15.tar.gz
 BuildArch:        noarch
+Patch0:           python-pyudev-0.15-load-libudev-in-context.patch
+# backported from upstream
+Patch1:           python-pyudev-0.15-retry-interrupted-calls.patch
 Requires:         systemd-libs
 BuildRequires:    python-devel python-setuptools systemd-devel
 
@@ -28,9 +31,11 @@ officially supported.
 
 %prep
 %setup -q -n %{modname}-%{version}
+%patch0 -p1
+%patch1 -p1
 
 %build
-%{__python} setup.py build 
+%{__python} setup.py build
 
 %install
 %{__python} setup.py install -O1 --skip-build --root $RPM_BUILD_ROOT
@@ -43,9 +48,15 @@ officially supported.
 
 
 %changelog
-* Thu Dec  3 2015 Jaroslav Škarvada <jskarvad@redhat.com> - 0.15-7.1
+* Wed Mar 22 2017 Jaroslav Škarvada <jskarvad@redhat.com> - 0.15-9
+- The libudev library loaded in context to workaround cleanup problems
+  Resolves: rhbz#1252833
+- Retry interrupted calls
+  Resolves: rhbz#1108921
+
+* Thu Dec  3 2015 Jaroslav Škarvada <jskarvad@redhat.com> - 0.15-8
 - Added systemd-libs requirement for libudev
-  Resolves: rhbz#1291562
+  Resolves: rhbz#1287461
 
 * Thu Apr  9 2015 Jaroslav Škarvada <jskarvad@redhat.com> - 0.15-7
 - Dropped unneeded explicit dependencies

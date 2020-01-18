@@ -1,0 +1,653 @@
+diff --git a/pyudev/_libudev.py b/pyudev/_libudev.py
+index efc27c9..7d97d35 100644
+--- a/pyudev/_libudev.py
++++ b/pyudev/_libudev.py
+@@ -284,6 +284,3 @@ def load_udev_library():
+                 if errorchecker:
+                     func.errcheck = errorchecker
+     return libudev
+-
+-
+-libudev = load_udev_library()
+diff --git a/pyudev/_util.py b/pyudev/_util.py
+index a99da08..c11b0b2 100644
+--- a/pyudev/_util.py
++++ b/pyudev/_util.py
+@@ -33,7 +33,6 @@ import os
+ import sys
+ import stat
+ 
+-from pyudev._libudev import libudev
+ 
+ if sys.version_info[0] == 2:
+     from pyudev._py2util import *
+@@ -101,7 +100,7 @@ def string_to_bool(value):
+     return value == '1'
+ 
+ 
+-def udev_list_iterate(entry):
++def udev_list_iterate(libudev, entry):
+     """
+     Iteration helper for udev list entry objects.
+ 
+diff --git a/pyudev/core.py b/pyudev/core.py
+index 83d2c7c..5017d80 100644
+--- a/pyudev/core.py
++++ b/pyudev/core.py
+@@ -35,7 +35,7 @@ except ImportError:
+     from pyudev._compat import check_output
+ 
+ from pyudev.device import Device
+-from pyudev._libudev import libudev
++from pyudev._libudev import load_udev_library
+ from pyudev._util import (ensure_unicode_string, ensure_byte_string,
+                           udev_list_iterate, property_value_to_bytes)
+ 
+@@ -89,10 +89,11 @@ class Context(object):
+         """
+         Create a new context.
+         """
+-        self._as_parameter_ = libudev.udev_new()
++        self._libudev = load_udev_library()
++        self._as_parameter_ = self._libudev.udev_new()
+ 
+     def __del__(self):
+-        libudev.udev_unref(self)
++        self._libudev.udev_unref(self)
+ 
+     @property
+     def sys_path(self):
+@@ -102,7 +103,7 @@ class Context(object):
+         The mount point can be overwritten using the environment variable
+         :envvar:`SYSFS_PATH`.  Use this for testing purposes.
+         """
+-        return ensure_unicode_string(libudev.udev_get_sys_path(self))
++        return ensure_unicode_string(self._libudev.udev_get_sys_path(self))
+ 
+     @property
+     def device_path(self):
+@@ -111,7 +112,7 @@ class Context(object):
+ 
+         This can be overridden in the udev configuration.
+         """
+-        return ensure_unicode_string(libudev.udev_get_dev_path(self))
++        return ensure_unicode_string(self._libudev.udev_get_dev_path(self))
+ 
+     @property
+     def run_path(self):
+@@ -123,7 +124,7 @@ class Context(object):
+ 
+         .. versionadded:: 0.10
+         """
+-        return ensure_unicode_string(libudev.udev_get_run_path(self))
++        return ensure_unicode_string(self._libudev.udev_get_run_path(self))
+ 
+     @property
+     def log_priority(self):
+@@ -142,11 +143,11 @@ class Context(object):
+ 
+         .. versionadded:: 0.9
+         """
+-        return libudev.udev_get_log_priority(self)
++        return self._libudev.udev_get_log_priority(self)
+ 
+     @log_priority.setter
+     def log_priority(self, value):
+-        libudev.udev_set_log_priority(self, value)
++        self._libudev.udev_set_log_priority(self, value)
+ 
+     def list_devices(self, **kwargs):
+         """
+@@ -205,10 +206,11 @@ class Enumerator(object):
+         if not isinstance(context, Context):
+             raise TypeError('Invalid context object')
+         self.context = context
+-        self._as_parameter_ = libudev.udev_enumerate_new(context)
++        self._as_parameter_ = context._libudev.udev_enumerate_new(context)
++        self._libudev = context._libudev
+ 
+     def __del__(self):
+-        libudev.udev_enumerate_unref(self)
++        self._libudev.udev_enumerate_unref(self)
+ 
+     def match(self, **kwargs):
+         """
+@@ -265,9 +267,9 @@ class Enumerator(object):
+ 
+         Return the instance again.
+         """
+-        match = (libudev.udev_enumerate_add_match_subsystem
++        match = (self._libudev.udev_enumerate_add_match_subsystem
+                  if not nomatch else
+-                 libudev.udev_enumerate_add_nomatch_subsystem)
++                 self._libudev.udev_enumerate_add_nomatch_subsystem)
+         match(self, ensure_byte_string(subsystem))
+         return self
+ 
+@@ -281,7 +283,7 @@ class Enumerator(object):
+ 
+         .. versionadded:: 0.8
+         """
+-        libudev.udev_enumerate_add_match_sysname(
++        self._libudev.udev_enumerate_add_match_sysname(
+             self, ensure_byte_string(sys_name))
+         return self
+ 
+@@ -301,7 +303,7 @@ class Enumerator(object):
+ 
+         Return the instance again.
+         """
+-        libudev.udev_enumerate_add_match_property(
++        self._libudev.udev_enumerate_add_match_property(
+             self, ensure_byte_string(property), property_value_to_bytes(value))
+         return self
+ 
+@@ -332,9 +334,9 @@ class Enumerator(object):
+ 
+         Return the instance again.
+         """
+-        match = (libudev.udev_enumerate_add_match_sysattr
++        match = (self._libudev.udev_enumerate_add_match_sysattr
+                  if not nomatch else
+-                 libudev.udev_enumerate_add_nomatch_sysattr)
++                 self._libudev.udev_enumerate_add_nomatch_sysattr)
+         match(self, ensure_byte_string(attribute),
+               property_value_to_bytes(value))
+         return self
+@@ -351,7 +353,7 @@ class Enumerator(object):
+ 
+         .. versionadded:: 0.6
+         """
+-        libudev.udev_enumerate_add_match_tag(self, ensure_byte_string(tag))
++        self._libudev.udev_enumerate_add_match_tag(self, ensure_byte_string(tag))
+         return self
+ 
+     def match_is_initialized(self):
+@@ -372,7 +374,7 @@ class Enumerator(object):
+ 
+         .. versionadded:: 0.8
+         """
+-        libudev.udev_enumerate_add_match_is_initialized(self)
++        self._libudev.udev_enumerate_add_match_is_initialized(self)
+         return self
+ 
+     def match_parent(self, parent):
+@@ -389,7 +391,7 @@ class Enumerator(object):
+ 
+         .. versionadded:: 0.13
+         """
+-        libudev.udev_enumerate_add_match_parent(self, parent)
++        self._libudev.udev_enumerate_add_match_parent(self, parent)
+         return self
+ 
+     def __iter__(self):
+@@ -398,7 +400,7 @@ class Enumerator(object):
+ 
+         Yield :class:`Device` objects.
+         """
+-        libudev.udev_enumerate_scan_devices(self)
+-        entry = libudev.udev_enumerate_get_list_entry(self)
+-        for name, _ in udev_list_iterate(entry):
++        self._libudev.udev_enumerate_scan_devices(self)
++        entry = self._libudev.udev_enumerate_get_list_entry(self)
++        for name, _ in udev_list_iterate(self._libudev, entry):
+             yield Device.from_sys_path(self.context, name)
+diff --git a/pyudev/device.py b/pyudev/device.py
+index f9a4325..d5ae3da 100644
+--- a/pyudev/device.py
++++ b/pyudev/device.py
+@@ -32,7 +32,6 @@ import os
+ from collections import Mapping, Container, Iterable
+ from datetime import timedelta
+ 
+-from pyudev._libudev import libudev
+ from pyudev._util import (ensure_byte_string, ensure_unicode_string,
+                           udev_list_iterate, string_to_bool,
+                           get_device_type)
+@@ -219,7 +218,7 @@ class Device(Mapping):
+            Raise :exc:`DeviceNotFoundAtPathError` instead of
+            :exc:`NoSuchDeviceError`
+         """
+-        device = libudev.udev_device_new_from_syspath(
++        device = context._libudev.udev_device_new_from_syspath(
+             context, ensure_byte_string(sys_path))
+         if not device:
+             raise DeviceNotFoundAtPathError(sys_path)
+@@ -247,7 +246,7 @@ class Device(Mapping):
+ 
+         .. versionadded:: 0.5
+         """
+-        device = libudev.udev_device_new_from_subsystem_sysname(
++        device = context._libudev.udev_device_new_from_subsystem_sysname(
+             context, ensure_byte_string(subsystem),
+             ensure_byte_string(sys_name))
+         if not device:
+@@ -295,7 +294,7 @@ class Device(Mapping):
+         if type not in ('char', 'block'):
+             raise ValueError('Invalid type: {0!r}. Must be one of "char" '
+                              'or "block".'.format(type))
+-        device = libudev.udev_device_new_from_devnum(
++        device = context._libudev.udev_device_new_from_devnum(
+             context, ensure_byte_string(type[0]), number)
+         if not device:
+             raise DeviceNotFoundByNumberError(type, number)
+@@ -360,7 +359,7 @@ class Device(Mapping):
+ 
+         .. versionadded:: 0.6
+         """
+-        device = libudev.udev_device_new_from_environment(context)
++        device = context._libudev.udev_device_new_from_environment(context)
+         if not device:
+             raise DeviceNotFoundInEnvironmentError()
+         return cls(context, device)
+@@ -368,9 +367,10 @@ class Device(Mapping):
+     def __init__(self, context, _device):
+         self.context = context
+         self._as_parameter_ = _device
++        self._libudev = context._libudev
+ 
+     def __del__(self):
+-        libudev.udev_device_unref(self)
++        self._libudev.udev_device_unref(self)
+ 
+     def __repr__(self):
+         return 'Device({0.sys_path!r})'.format(self)
+@@ -381,12 +381,12 @@ class Device(Mapping):
+         The parent :class:`Device` or ``None``, if there is no parent
+         device.
+         """
+-        parent = libudev.udev_device_get_parent(self)
++        parent = self._libudev.udev_device_get_parent(self)
+         if not parent:
+             return None
+         # the parent device is not referenced, thus forcibly acquire a
+         # reference
+-        return Device(self.context, libudev.udev_device_ref(parent))
++        return Device(self.context, self._libudev.udev_device_ref(parent))
+ 
+     @property
+     def children(self):
+@@ -432,12 +432,12 @@ class Device(Mapping):
+         subsystem = ensure_byte_string(subsystem)
+         if device_type is not None:
+             device_type = ensure_byte_string(device_type)
+-        parent = libudev.udev_device_get_parent_with_subsystem_devtype(
++        parent = self._libudev.udev_device_get_parent_with_subsystem_devtype(
+             self, subsystem, device_type)
+         if not parent:
+             return None
+         # parent device is not referenced, thus forcibly acquire a reference
+-        return Device(self.context, libudev.udev_device_ref(parent))
++        return Device(self.context, self._libudev.udev_device_ref(parent))
+ 
+     def traverse(self):
+         """
+@@ -458,7 +458,8 @@ class Device(Mapping):
+         Absolute path of this device in ``sysfs`` including the ``sysfs``
+         mount point as unicode string.
+         """
+-        return ensure_unicode_string(libudev.udev_device_get_syspath(self))
++        return ensure_unicode_string(
++            self._libudev.udev_device_get_syspath(self))
+ 
+     @property
+     def device_path(self):
+@@ -470,21 +471,24 @@ class Device(Mapping):
+         mount point.  However, the path is absolute and starts with a slash
+         ``'/'``.
+         """
+-        return ensure_unicode_string(libudev.udev_device_get_devpath(self))
++        return ensure_unicode_string(
++            self._libudev.udev_device_get_devpath(self))
+ 
+     @property
+     def subsystem(self):
+         """
+         Name of the subsystem this device is part of as unicode string.
+         """
+-        return ensure_unicode_string(libudev.udev_device_get_subsystem(self))
++        return ensure_unicode_string(
++            self._libudev.udev_device_get_subsystem(self))
+ 
+     @property
+     def sys_name(self):
+         """
+         Device file name inside ``sysfs`` as unicode string.
+         """
+-        return ensure_unicode_string(libudev.udev_device_get_sysname(self))
++        return ensure_unicode_string(
++            self._libudev.udev_device_get_sysname(self))
+ 
+     @property
+     def sys_number(self):
+@@ -508,7 +512,7 @@ class Device(Mapping):
+ 
+         .. versionadded:: 0.11
+         """
+-        number = libudev.udev_device_get_sysnum(self)
++        number = self._libudev.udev_device_get_sysnum(self)
+         if number is not None:
+             return ensure_unicode_string(number)
+ 
+@@ -529,7 +533,7 @@ class Device(Mapping):
+ 
+         .. versionadded:: 0.10
+         """
+-        device_type = libudev.udev_device_get_devtype(self)
++        device_type = self._libudev.udev_device_get_devtype(self)
+         if device_type is not None:
+             return ensure_unicode_string(device_type)
+ 
+@@ -541,7 +545,7 @@ class Device(Mapping):
+ 
+         .. versionadded:: 0.5
+         """
+-        driver = libudev.udev_device_get_driver(self)
++        driver = self._libudev.udev_device_get_driver(self)
+         if driver:
+             return ensure_unicode_string(driver)
+ 
+@@ -563,7 +567,7 @@ class Device(Mapping):
+            this property is not necessary equal to the ``filename`` given to
+            :meth:`from_device_file()`.
+         """
+-        node = libudev.udev_device_get_devnode(self)
++        node = self._libudev.udev_device_get_devnode(self)
+         if node:
+             return ensure_unicode_string(node)
+ 
+@@ -591,7 +595,7 @@ class Device(Mapping):
+ 
+         .. versionadded:: 0.11
+         """
+-        return libudev.udev_device_get_devnum(self)
++        return self._libudev.udev_device_get_devnum(self)
+ 
+     @property
+     def is_initialized(self):
+@@ -614,7 +618,7 @@ class Device(Mapping):
+ 
+         .. versionadded:: 0.8
+         """
+-        return bool(libudev.udev_device_get_is_initialized(self))
++        return bool(self._libudev.udev_device_get_is_initialized(self))
+ 
+     @property
+     def time_since_initialized(self):
+@@ -631,7 +635,8 @@ class Device(Mapping):
+ 
+         .. versionadded:: 0.8
+         """
+-        microseconds = libudev.udev_device_get_usec_since_initialized(self)
++        microseconds = self._libudev.udev_device_get_usec_since_initialized(
++            self)
+         return timedelta(microseconds=microseconds)
+ 
+     @property
+@@ -650,8 +655,8 @@ class Device(Mapping):
+         The property provides access to all such symbolic links, which were
+         created by UDev for this device.
+         """
+-        devlinks = libudev.udev_device_get_devlinks_list_entry(self)
+-        for name, _ in udev_list_iterate(devlinks):
++        devlinks = self._libudev.udev_device_get_devlinks_list_entry(self)
++        for name, _ in udev_list_iterate(self._libudev, devlinks):
+             yield ensure_unicode_string(name)
+ 
+     @property
+@@ -713,19 +718,16 @@ class Device(Mapping):
+         Return a generator yielding the names of all properties of this
+         device as unicode strings.
+         """
+-        properties = libudev.udev_device_get_properties_list_entry(self)
+-        for name, _ in udev_list_iterate(properties):
++        properties = self._libudev.udev_device_get_properties_list_entry(self)
++        for name, _ in udev_list_iterate(self._libudev, properties):
+             yield ensure_unicode_string(name)
+ 
+     def __len__(self):
+         """
+         Return the amount of properties defined for this device as integer.
+         """
+-        properties = libudev.udev_device_get_properties_list_entry(self)
+-        i = 0
+-        for i, _ in enumerate(udev_list_iterate(properties), start=1):
+-            pass
+-        return i
++        properties = self._libudev.udev_device_get_properties_list_entry(self)
++        return sum(1 for _ in udev_list_iterate(self._libudev, properties))
+ 
+     def __getitem__(self, property):
+         """
+@@ -738,7 +740,7 @@ class Device(Mapping):
+         :exc:`~exceptions.KeyError`, if the given property is not defined
+         for this device.
+         """
+-        value = libudev.udev_device_get_property_value(
++        value = self._libudev.udev_device_get_property_value(
+             self, ensure_byte_string(property))
+         if value is None:
+             raise KeyError(property)
+@@ -814,14 +816,17 @@ class Tags(Iterable, Container):
+     def __init__(self, device):
+         self.device = device
+ 
+-    if hasattr(libudev, 'udev_device_has_tag'):
+-        def _has_tag(self, tag):
+-            return bool(libudev.udev_device_has_tag(
++    def _has_tag(self, tag):
++        if hasattr(self._libudev, 'udev_device_has_tag'):
++            return bool(self._libudev.udev_device_has_tag(
+                 self.device, ensure_byte_string(tag)))
+-    else:
+-        def _has_tag(self, tag):
++        else:
+             return any(t == tag for t in self)
+ 
++    @property
++    def _libudev(self):
++        return self.device._libudev
++
+     def __contains__(self, tag):
+         """
+         Check for existence of ``tag``.
+@@ -839,8 +844,8 @@ class Tags(Iterable, Container):
+ 
+         Yield each tag as unicode string.
+         """
+-        tags = libudev.udev_device_get_tags_list_entry(self.device)
+-        for tag, _ in udev_list_iterate(tags):
++        tags = self._libudev.udev_device_get_tags_list_entry(self.device)
++        for tag, _ in udev_list_iterate(self._libudev, tags):
+             yield ensure_unicode_string(tag)
+ 
+ 
+@@ -876,29 +881,26 @@ class Attributes(Mapping):
+ 
+     def __init__(self, device):
+         self.device = device
++        self._libudev = device._libudev
+ 
+-    if hasattr(libudev, 'udev_device_get_sysattr_list_entry'):
+-        @property
+-        def _attributes(self):
+-            attrs = libudev.udev_device_get_sysattr_list_entry(self.device)
+-            for attribute, _ in udev_list_iterate(attrs):
++    def _get_attributes(self):
++        if hasattr(self._libudev, 'udev_device_get_sysattr_list_entry'):
++            attrs = self._libudev.udev_device_get_sysattr_list_entry(
++                self.device)
++            for attribute, _ in udev_list_iterate(self._libudev, attrs):
+                 yield ensure_unicode_string(attribute)
+-    else:
+-        @property
+-        def _attributes(self):
++        else:
+             sys_path = self.device.sys_path
+-            return (fn for fn in os.listdir(sys_path) if
+-                    _is_attribute_file(os.path.join(sys_path, fn)) and
+-                    fn in self)
++            for filename in os.listdir(sys_path):
++                filepath = os.path.join(sys_path, filename)
++                if _is_attribute_file(filepath):
++                    yield filename
+ 
+     def __len__(self):
+         """
+         Return the amount of attributes defined.
+         """
+-        i = 0
+-        for i, _ in enumerate(self._attributes, start=1):
+-            pass
+-        return i
++        return sum(1 for _ in self._get_attributes())
+ 
+     def __iter__(self):
+         """
+@@ -906,10 +908,10 @@ class Attributes(Mapping):
+ 
+         Yield each attribute name as unicode string.
+         """
+-        return self._attributes
++        return self._get_attributes()
+ 
+     def __contains__(self, attribute):
+-        value = libudev.udev_device_get_sysattr_value(
++        value = self._libudev.udev_device_get_sysattr_value(
+             self.device, ensure_byte_string(attribute))
+         return value is not None
+ 
+@@ -924,7 +926,7 @@ class Attributes(Mapping):
+         :exc:`~exceptions.KeyError`, if the given attribute is not defined
+         for this device.
+         """
+-        value = libudev.udev_device_get_sysattr_value(
++        value = self._libudev.udev_device_get_sysattr_value(
+             self.device, ensure_byte_string(attribute))
+         if value is None:
+             raise KeyError(attribute)
+diff --git a/pyudev/monitor.py b/pyudev/monitor.py
+index 8153ecc..6a51564 100644
+--- a/pyudev/monitor.py
++++ b/pyudev/monitor.py
+@@ -36,7 +36,6 @@ import select
+ from threading import Thread
+ from contextlib import closing
+ 
+-from pyudev._libudev import libudev
+ from pyudev._util import ensure_byte_string, ensure_unicode_string, reraise
+ 
+ from pyudev.core import Device
+@@ -82,6 +81,7 @@ class Monitor(object):
+         self.context = context
+         self._as_parameter_ = monitor_p
+         self._socket_path = socket_path
++        self._libudev = context._libudev
+ 
+     def _reraise_with_socket_path(self):
+         _, exc_value, traceback = sys.exc_info()
+@@ -89,7 +89,7 @@ class Monitor(object):
+         reraise(exc_value, traceback)
+ 
+     def __del__(self):
+-        libudev.udev_monitor_unref(self)
++        self._libudev.udev_monitor_unref(self)
+ 
+     @classmethod
+     def from_netlink(cls, context, source='udev'):
+@@ -117,7 +117,7 @@ class Monitor(object):
+         if source not in ('kernel', 'udev'):
+             raise ValueError('Invalid source: {0!r}. Must be one of "udev" '
+                              'or "kernel"'.format(source))
+-        monitor = libudev.udev_monitor_new_from_netlink(
++        monitor = context._libudev.udev_monitor_new_from_netlink(
+             context, ensure_byte_string(source))
+         if not monitor:
+             raise EnvironmentError('Could not create udev monitor')
+@@ -140,7 +140,7 @@ class Monitor(object):
+         socket.  Raise :exc:`~exceptions.EnvironmentError`, if the creation of
+         the monitor failed.
+         """
+-        monitor = libudev.udev_monitor_new_from_socket(
++        monitor = context._libudev.udev_monitor_new_from_socket(
+             context, ensure_byte_string(socket_path))
+         if not monitor:
+             raise EnvironmentError('Could not create monitor for socket: '
+@@ -154,7 +154,7 @@ class Monitor(object):
+         This is really a real file descriptor ;), which can be watched and
+         :func:`select.select`\ ed.
+         """
+-        return libudev.udev_monitor_get_fd(self)
++        return self._libudev.udev_monitor_get_fd(self)
+ 
+     def filter_by(self, subsystem, device_type=None):
+         """
+@@ -179,9 +179,9 @@ class Monitor(object):
+         subsystem = ensure_byte_string(subsystem)
+         if device_type:
+             device_type = ensure_byte_string(device_type)
+-        libudev.udev_monitor_filter_add_match_subsystem_devtype(
++        self._libudev.udev_monitor_filter_add_match_subsystem_devtype(
+             self, subsystem, device_type)
+-        libudev.udev_monitor_filter_update(self)
++        self._libudev.udev_monitor_filter_update(self)
+ 
+     def filter_by_tag(self, tag):
+         """
+@@ -202,9 +202,9 @@ class Monitor(object):
+         .. versionchanged:: 0.15
+            This method can also be after :meth:`enable_receiving()` now
+         """
+-        libudev.udev_monitor_filter_add_match_tag(
++        self._libudev.udev_monitor_filter_add_match_tag(
+             self, ensure_byte_string(tag))
+-        libudev.udev_monitor_filter_update(self)
++        self._libudev.udev_monitor_filter_update(self)
+ 
+     def remove_filter(self):
+         """
+@@ -223,8 +223,8 @@ class Monitor(object):
+ 
+         .. versionadded:: 0.15
+         """
+-        libudev.udev_monitor_filter_remove(self)
+-        libudev.udev_monitor_filter_update(self)
++        self._libudev.udev_monitor_filter_remove(self)
++        self._libudev.udev_monitor_filter_update(self)
+ 
+     def enable_receiving(self):
+         """
+@@ -240,7 +240,7 @@ class Monitor(object):
+            monitor.
+         """
+         try:
+-            libudev.udev_monitor_enable_receiving(self)
++            self._libudev.udev_monitor_enable_receiving(self)
+         except EnvironmentError:
+             self._reraise_with_socket_path()
+ 
+@@ -272,7 +272,7 @@ class Monitor(object):
+         .. _python-prctl: http://packages.python.org/python-prctl
+         """
+         try:
+-            libudev.udev_monitor_set_receive_buffer_size(self, size)
++            self._libudev.udev_monitor_set_receive_buffer_size(self, size)
+         except EnvironmentError:
+             self._reraise_with_socket_path()
+ 
+@@ -301,13 +301,13 @@ class Monitor(object):
+         read.
+         """
+         try:
+-            device_p = libudev.udev_monitor_receive_device(self)
++            device_p = self._libudev.udev_monitor_receive_device(self)
+         except EnvironmentError:
+             self._reraise_with_socket_path()
+         if not device_p:
+             raise EnvironmentError('Could not receive device')
+         action = ensure_unicode_string(
+-            libudev.udev_device_get_action(device_p))
++            self._libudev.udev_device_get_action(device_p))
+         return action, Device(self.context, device_p)
+ 
+     def __iter__(self):

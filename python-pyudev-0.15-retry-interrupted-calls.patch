@@ -1,0 +1,81 @@
+diff --git a/pyudev/_util.py b/pyudev/_util.py
+index 266b161..3ce82b2 100644
+--- a/pyudev/_util.py
++++ b/pyudev/_util.py
+@@ -32,6 +32,7 @@
+ import os
+ import sys
+ import stat
++import errno
+ 
+ 
+ if sys.version_info[0] == 2:
+@@ -141,3 +142,37 @@ def get_device_type(filename):
+         return 'block'
+     else:
+         raise ValueError('not a device file: {0!r}'.format(filename))
++
++
++def eintr_retry_call(func, *args, **kwargs):
++    """
++    Handle interruptions to an interruptible system call.
++
++    Run an interruptible system call in a loop and retry if it raises EINTR.
++    The signal calls that may raise EINTR prior to Python 3.5 are listed in
++    PEP 0475.  Any calls to these functions must be wrapped in eintr_retry_call
++    in order to handle EINTR returns in older versions of Python.
++
++    This function is safe to use under Python 3.5 and newer since the wrapped
++    function will simply return without raising EINTR.
++
++    This function is based on _eintr_retry_call in python's subprocess.py.
++    """
++
++    # select.error inherits from Exception instead of OSError in Python 2
++    import select
++
++    while True:
++        try:
++            return func(*args, **kwargs)
++        except (OSError, IOError, select.error) as e:
++            # If this is not an IOError or OSError, it's the old select.error
++            # type, which means that the errno is only accessible via subscript
++            if isinstance(e, (OSError, IOError)):
++                error_code = e.errno
++            else:
++                error_code = e.args[0]
++
++            if error_code == errno.EINTR:
++                continue
++            raise
+diff --git a/pyudev/monitor.py b/pyudev/monitor.py
+index b1eb71c..d87dc2c 100644
+--- a/pyudev/monitor.py
++++ b/pyudev/monitor.py
+@@ -36,7 +36,7 @@ import select
+ from threading import Thread
+ from contextlib import closing
+ 
+-from pyudev._util import ensure_byte_string, ensure_unicode_string, reraise
++from pyudev._util import ensure_byte_string, ensure_unicode_string, reraise, eintr_retry_call
+ 
+ from pyudev.core import Device
+ 
+@@ -328,7 +328,7 @@ class Monitor(object):
+         with closing(select.epoll()) as notifier:
+             notifier.register(self, select.EPOLLIN)
+             while True:
+-                events = notifier.poll()
++                events = eintr_retry_call(notifier.poll)
+                 for event in events:
+                     yield self.receive_device()
+ 
+@@ -399,7 +399,7 @@ class MonitorObserver(Thread):
+             # and on the monitor
+             notifier.register(self.monitor, select.EPOLLIN)
+             while True:
+-                for fd, _ in notifier.poll():
++                for fd, _ in eintr_retry_call(notifier.poll):
+                     if fd == self._stop_event_source:
+                         # in case of a stop event, close our pipe side, and
+                         # return from the thread
