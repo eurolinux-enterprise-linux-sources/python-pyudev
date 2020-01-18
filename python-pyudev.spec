@@ -2,19 +2,14 @@
 
 Name:             python-pyudev
 Version:          0.15
-Release:          6%{?dist}
+Release:          7%{?dist}
 Summary:          A libudev binding
-
 Group:            Development/Languages
 License:          LGPLv2+
 URL:              http://pypi.python.org/pypi/pyudev
 Source0:          http://pypi.python.org/packages/source/p/pyudev/pyudev-0.15.tar.gz
-
 BuildArch:        noarch
-
-
 BuildRequires:    python-devel python-setuptools systemd-devel
-Requires:         python python-setuptools
 
 %description
 ###### pyudev ######
@@ -47,6 +42,14 @@ officially supported.
 
 
 %changelog
+* Mon Jul 27 2015 Scientific Linux Auto Patch Process <SCIENTIFIC-LINUX-DEVEL@LISTSERV.FNAL.GOV>
+- Eliminated rpmbuild "bogus date" error due to inconsistent weekday,
+  by assuming the date is correct and changing the weekday.
+
+* Thu Apr  9 2015 Jaroslav Škarvada <jskarvad@redhat.com> - 0.15-7
+- Dropped unneeded explicit dependencies
+  Resolves: rhbz#1095454
+
 * Fri Dec 27 2013 Daniel Mach <dmach@redhat.com> - 0.15-6
 - Mass rebuild 2013-12-27
 
