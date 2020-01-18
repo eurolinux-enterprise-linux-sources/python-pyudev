@@ -2,7 +2,7 @@
 
 Name:             python-pyudev
 Version:          0.15
-Release:          5%{?dist}
+Release:          6%{?dist}
 Summary:          A libudev binding
 
 Group:            Development/Languages
@@ -47,6 +47,9 @@ officially supported.
 
 
 %changelog
+* Fri Dec 27 2013 Daniel Mach <dmach@redhat.com> - 0.15-6
+- Mass rebuild 2013-12-27
+
 * Wed Jul 31 2013 Jaroslav Škarvada <jskarvad@redhat.com> - 0.15-5
 - Fixed license field
 
